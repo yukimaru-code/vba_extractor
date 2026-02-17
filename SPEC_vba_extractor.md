@@ -1,10 +1,10 @@
-# vba_extractor.py 仕様書
+# vbaEXTRACTOR.py 仕様書
 
 ## 1. 目的
 Excelファイル（`.xlsm` / `.xlsb` / `.xls`）からVBAマクロを抽出し、テキストファイルとして保存する。
 
 ## 2. 対象ファイル
-- メインスクリプト: `vba_extractor.py`
+- メインスクリプト: `vbaEXTRACTOR.py`
 - 依存定義: `requirements.txt`
 
 ## 3. 動作環境・依存ライブラリ
@@ -108,5 +108,5 @@ Excelファイル（`.xlsm` / `.xlsb` / `.xls`）からVBAマクロを抽出し�
 ## 10. 実行方法
 ```bash
 pip install -r requirements.txt
-python vba_extractor.py
+python vbaEXTRACTOR.py
 ```

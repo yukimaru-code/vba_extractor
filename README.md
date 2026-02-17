@@ -1,4 +1,4 @@
-# vba_extractor
+# vbaEXTRACTOR
 
 ExcelファイルからVBAコードを抽出するツール。
 
@@ -9,7 +9,7 @@ pip install -r requirements.txt
 
 ## Usage
 ```bash
-python vba_extractor.py
+python vbaEXTRACTOR.py
 ```
 
 - `tkinterdnd2` が利用可能な環境では、ウィンドウにExcelファイルをドラッグ&ドロップして抽出できます。

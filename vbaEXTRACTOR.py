@@ -82,6 +82,7 @@ def build_no_macro_message(file_path):
     )
 
 
+# JSON形式の実行レポートを出力する
 def write_extraction_report(file_path, success, extracted_count, output_dir, message, extracted_file_names):
     """抽出対象Excelと同じディレクトリにJSONレポートを追記する。"""
     dir_path = os.path.dirname(file_path)
@@ -142,7 +143,7 @@ def extract_vba_from_excel(file_path):
             count = 0
             used_names = set()
             extracted_file_names = []
-            # extract_macrosは (filename, stream_path, vba_filename, vba_code) を返す
+            # extract_macros は (filename, stream_path, vba_filename, vba_code) を返す
             if vbap.detect_vba_macros():
                 for (_, _, vba_filename, vba_code) in vbap.extract_macros():
                     if count == 0 and not os.path.exists(output_dir):
@@ -151,7 +152,7 @@ def extract_vba_from_excel(file_path):
                     # ファイル名を安全化し、重複しない保存先を作る
                     save_path = build_unique_save_path(output_dir, vba_filename, used_names)
 
-                    # ファイル書き出し (エンコーディングはutf-8推奨)
+                    # ファイルを書き出す（エンコーディングは utf-8 推奨）
                     with open(save_path, "w", encoding="utf-8") as f:
                         f.write(normalize_vba_code(vba_code))
 
@@ -297,3 +298,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

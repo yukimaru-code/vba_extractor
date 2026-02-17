@@ -23,14 +23,18 @@ Excelファイル（`.xlsm` / `.xlsb` / `.xls`）からVBAマクロを抽出し�
 - 抽出されたVBAコードを `.txt` として保存
 - 保存先: 入力Excelと同じディレクトリ配下の `<Excelファイル名>/`
 - 例: `sample.xlsm` -> `sample/Module1.txt`
+- （任意）実行レポートを `.json` として保存
+- JSON保存先: 入力Excelと同じディレクトリ配下の `<Excelファイル名>_report.json`
+- JSON記録項目: `timestamp`, `target_file`, `status`, `extracted_count`, `extracted_files`, `output_dir`, `message`
 
 ## 5. 処理フロー
 1. GUI起動時に `tkinterdnd2` の利用可否を判定する。
-1. 利用可能ならドラッグ&ドロップ対応ウィンドウを表示、不可ならファイル選択ダイアログにフォールバックする。
+1. 利用可能ならドラッグ&ドロップ対応ウィンドウを表示、不可ならチェックボックス付き起動画面を表示する。
 1. ファイルパスを受け取り、存在チェックを行う。
 1. マクロ保存が必要になったタイミングで出力フォルダ（Excelファイル名と同名）を作成する。
 1. `VBA_Parser.detect_vba_macros()` でマクロ有無を判定する。
 1. `extract_macros()` の各要素を `.txt` として保存する。
+1. 実行レポート出力チェックボックスがONの場合、`<Excelファイル名>_report.json` に実行結果を追記する。
 1. 成功・失敗メッセージをポップアップ表示する。
 
 ## 6. 関数仕様
@@ -64,34 +68,44 @@ Excelファイル（`.xlsm` / `.xlsb` / `.xls`）からVBAマクロを抽出し�
 
 ### 6.5 `extract_vba_from_excel(file_path)`
 - 目的: VBA抽出の本処理を実行する。
-- 戻り値: `(success: bool, message: str)`
+- 戻り値: `(success: bool, message: str, extracted_count: int, output_dir: str, extracted_file_names: list[str])`
 - 成功時:
-  - 抽出件数と保存先をメッセージとして返す
+  - 抽出件数、保存先、抽出ファイル名一覧を返す
 - 失敗時:
   - ファイル未存在、マクロ未検出、例外発生時の理由をメッセージで返す
   - マクロ未検出時は「暗号化・保護・破損の可能性」を含めた案内を返す
   - `VBA_Parser` は `finally` で必ず `close()` する
 
-### 6.6 `main()`
+### 6.6 `write_extraction_report(file_path, success, extracted_count, output_dir, message, extracted_file_names)`
+- 目的: 抽出対象Excelと同じディレクトリにJSONレポートを追記する。
+- 主な仕様:
+  - レポート名は `<Excelファイル名>_report.json`
+  - 既存レポートが配列形式で存在する場合は末尾に追加
+  - 既存レポートが単一オブジェクトの場合は配列化して追加
+  - 既存レポートが壊れている場合は新規配列として再作成
+
+### 6.7 `main()`
 - 目的: GUI制御とユーザー操作を受け付ける。
 - 主な仕様:
   - D&D UI利用可なら専用画面を表示
-  - D&D不可ならファイル選択ダイアログで処理
+  - D&D不可でも、チェックボックス付きの起動画面を表示
+  - 実行レポート出力チェックボックスでJSONレポート出力の有無を切り替える
   - 結果は `messagebox.showinfo/showerror` で通知
 
 ## 7. UI仕様
 
 ### 7.1 D&D利用可能時
 - ウィンドウタイトル: `VBA Extractor`
-- 固定サイズ: `520x220`
+- 固定サイズ: `520x250`
 - 構成:
   - 説明ラベル（ドラッグ&ドロップ案内）
   - ドロップ領域（`Drop Here`）
   - 対応拡張子ヒント
+  - 実行レポート出力チェックボックス（JSON）
   - `ファイル選択...` ボタン（手動選択）
 
 ### 7.2 フォールバック時
-- ファイル選択ダイアログのみを表示
+- チェックボックス付きの起動画面を表示し、`ファイル選択...` ボタンで処理を実行
 
 ## 8. エラー・例外仕様
 - ファイル未存在: エラーメッセージを返却し、エラーポップアップ表示

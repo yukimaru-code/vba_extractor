@@ -1,5 +1,4 @@
 import os
-import sys
 import re
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -65,6 +64,20 @@ def parse_dnd_file_paths(root, data):
     return [p for p in root.tk.splitlist(data) if p]
 
 
+def normalize_vba_code(vba_code):
+    if isinstance(vba_code, bytes):
+        return vba_code.decode("utf-8", errors="replace")
+    return vba_code if isinstance(vba_code, str) else str(vba_code)
+
+
+def build_no_macro_message(file_path):
+    return (
+        "VBAマクロを抽出できませんでした。\n"
+        "マクロが存在しないか、ファイルが暗号化・保護・破損している可能性があります。\n"
+        f"対象: {file_path}"
+    )
+
+
 def extract_vba_from_excel(file_path):
     """
     指定されたExcelファイルからVBAマクロを抽出し、
@@ -76,42 +89,47 @@ def extract_vba_from_excel(file_path):
             print(f"エラー: ファイルが見つかりません - {file_path}")
             return False, f"ファイルが見つかりません: {file_path}"
 
-        # 保存先フォルダの作成（Excelファイル名）
+        # 保存先フォルダ（必要になったときに作成）
         base_name = os.path.splitext(os.path.basename(file_path))[0]
         dir_path = os.path.dirname(file_path)
         output_dir = os.path.join(dir_path, f"{base_name}")
-
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
 
         print(f"解析中: {file_path}")
         
         # VBAの解析と抽出
         vbap = VBA_Parser(file_path)
-        
-        count = 0
-        used_names = set()
-        # extract_macrosは (filename, stream_path, vba_filename, vba_code) を返す
-        if vbap.detect_vba_macros():
-            for (filename, stream_path, vba_filename, vba_code) in vbap.extract_macros():
-                # ファイル名を安全化し、重複しない保存先を作る
-                save_path = build_unique_save_path(output_dir, vba_filename, used_names)
-                
-                # ファイル書き出し (エンコーディングはutf-8推奨)
-                with open(save_path, 'w', encoding='utf-8') as f:
-                    f.write(vba_code if isinstance(vba_code, str) else str(vba_code))
-                
-                print(f"保存: {save_path}")
-                count += 1
-            
+        try:
+            count = 0
+            used_names = set()
+            # extract_macrosは (filename, stream_path, vba_filename, vba_code) を返す
+            if vbap.detect_vba_macros():
+                for (filename, stream_path, vba_filename, vba_code) in vbap.extract_macros():
+                    if count == 0 and not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+
+                    # ファイル名を安全化し、重複しない保存先を作る
+                    save_path = build_unique_save_path(output_dir, vba_filename, used_names)
+                    
+                    # ファイル書き出し (エンコーディングはutf-8推奨)
+                    with open(save_path, 'w', encoding='utf-8') as f:
+                        f.write(normalize_vba_code(vba_code))
+                    
+                    print(f"保存: {save_path}")
+                    count += 1
+
+                return True, f"{count} 個のファイルを抽出しました。\n保存先: {output_dir}"
+
+            return False, build_no_macro_message(file_path)
+        finally:
             vbap.close()
-            return True, f"{count} 個のファイルを抽出しました。\n保存先: {output_dir}"
-        else:
-            vbap.close()
-            return False, "VBAマクロが見つかりませんでした。"
 
     except Exception as e:
-        return False, f"エラーが発生しました: {str(e)}"
+        return (
+            False,
+            "抽出処理でエラーが発生しました。\n"
+            "ファイルが暗号化・保護・破損している可能性があります。\n"
+            f"詳細: {str(e)}"
+        )
 
 def main():
     def run_extraction(file_path):
@@ -163,12 +181,13 @@ def main():
                 messagebox.showerror("結果", "ドロップされたパスを取得できませんでした。")
                 return
 
-            file_path = paths[0]
-            if not is_supported_excel_file(file_path):
+            target_paths = [p for p in paths if is_supported_excel_file(p)]
+            if not target_paths:
                 messagebox.showerror("結果", "対応していないファイル形式、またはファイルが存在しません。")
                 return
 
-            run_extraction(file_path)
+            for file_path in target_paths:
+                run_extraction(file_path)
 
         drop_area.drop_target_register(DND_FILES)
         drop_area.dnd_bind("<<Drop>>", on_drop)

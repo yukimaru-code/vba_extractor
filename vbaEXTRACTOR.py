@@ -1,8 +1,12 @@
+import json
 import os
 import re
 import tkinter as tk
+from datetime import datetime
 from tkinter import filedialog, messagebox
+
 from oletools.olevba import VBA_Parser
+
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
 except ImportError:
@@ -78,6 +82,42 @@ def build_no_macro_message(file_path):
     )
 
 
+def write_extraction_report(file_path, success, extracted_count, output_dir, message, extracted_file_names):
+    """抽出対象Excelと同じディレクトリにJSONレポートを追記する。"""
+    dir_path = os.path.dirname(file_path)
+    source_name = os.path.splitext(os.path.basename(file_path))[0]
+    report_path = os.path.join(dir_path, f"{source_name}_report.json")
+
+    record = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "target_file": file_path,
+        "status": "SUCCESS" if success else "FAILED",
+        "extracted_count": extracted_count,
+        "extracted_files": extracted_file_names,
+        "output_dir": output_dir,
+        "message": message.replace("\n", " "),
+    }
+
+    logs = []
+    if os.path.exists(report_path):
+        try:
+            with open(report_path, "r", encoding="utf-8-sig") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, list):
+                logs = loaded
+            elif isinstance(loaded, dict):
+                logs = [loaded]
+        except Exception:
+            logs = []
+
+    logs.append(record)
+
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(logs, f, ensure_ascii=False, indent=2)
+
+    return report_path
+
+
 def extract_vba_from_excel(file_path):
     """
     指定されたExcelファイルからVBAマクロを抽出し、
@@ -87,7 +127,7 @@ def extract_vba_from_excel(file_path):
         # ファイルの存在確認
         if not os.path.exists(file_path):
             print(f"エラー: ファイルが見つかりません - {file_path}")
-            return False, f"ファイルが見つかりません: {file_path}"
+            return False, f"ファイルが見つかりません: {file_path}", 0, "", []
 
         # 保存先フォルダ（必要になったときに作成）
         base_name = os.path.splitext(os.path.basename(file_path))[0]
@@ -95,31 +135,39 @@ def extract_vba_from_excel(file_path):
         output_dir = os.path.join(dir_path, f"{base_name}")
 
         print(f"解析中: {file_path}")
-        
+
         # VBAの解析と抽出
         vbap = VBA_Parser(file_path)
         try:
             count = 0
             used_names = set()
+            extracted_file_names = []
             # extract_macrosは (filename, stream_path, vba_filename, vba_code) を返す
             if vbap.detect_vba_macros():
-                for (filename, stream_path, vba_filename, vba_code) in vbap.extract_macros():
+                for (_, _, vba_filename, vba_code) in vbap.extract_macros():
                     if count == 0 and not os.path.exists(output_dir):
                         os.makedirs(output_dir)
 
                     # ファイル名を安全化し、重複しない保存先を作る
                     save_path = build_unique_save_path(output_dir, vba_filename, used_names)
-                    
+
                     # ファイル書き出し (エンコーディングはutf-8推奨)
-                    with open(save_path, 'w', encoding='utf-8') as f:
+                    with open(save_path, "w", encoding="utf-8") as f:
                         f.write(normalize_vba_code(vba_code))
-                    
+
                     print(f"保存: {save_path}")
+                    extracted_file_names.append(os.path.basename(save_path))
                     count += 1
 
-                return True, f"{count} 個のファイルを抽出しました。\n保存先: {output_dir}"
+                return (
+                    True,
+                    f"{count} 個のファイルを抽出しました。\n保存先: {output_dir}",
+                    count,
+                    output_dir,
+                    extracted_file_names,
+                )
 
-            return False, build_no_macro_message(file_path)
+            return False, build_no_macro_message(file_path), 0, output_dir, []
         finally:
             vbap.close()
 
@@ -128,21 +176,41 @@ def extract_vba_from_excel(file_path):
             False,
             "抽出処理でエラーが発生しました。\n"
             "ファイルが暗号化・保護・破損している可能性があります。\n"
-            f"詳細: {str(e)}"
+            f"詳細: {str(e)}",
+            0,
+            "",
+            [],
         )
 
+
 def main():
+    root = None
+    report_enabled = None
+
     def run_extraction(file_path):
-        success, message = extract_vba_from_excel(file_path)
+        success, message, extracted_count, output_dir, extracted_file_names = extract_vba_from_excel(file_path)
+        report_suffix = ""
+
+        if report_enabled.get():
+            report_path = write_extraction_report(
+                file_path=file_path,
+                success=success,
+                extracted_count=extracted_count,
+                output_dir=output_dir,
+                message=message,
+                extracted_file_names=extracted_file_names,
+            )
+            report_suffix = f"\n\nレポート: {report_path}"
+
         if success:
-            messagebox.showinfo("完了", message)
+            messagebox.showinfo("完了", f"{message}{report_suffix}")
         else:
-            messagebox.showerror("結果", message)
+            messagebox.showerror("結果", f"{message}{report_suffix}")
 
     def browse_file():
         file_path = filedialog.askopenfilename(
             title="VBAを抽出したいExcelファイルを選択してください",
-            filetypes=[("Excel Macro Files", "*.xlsm *.xlsb *.xls"), ("All Files", "*.*")]
+            filetypes=[("Excel Macro Files", "*.xlsm *.xlsb *.xls"), ("All Files", "*.*")],
         )
         if file_path:
             run_extraction(file_path)
@@ -152,8 +220,10 @@ def main():
     # tkinterdnd2 が使える場合はD&D対応UIを表示
     if TkinterDnD is not None and DND_FILES is not None:
         root = TkinterDnD.Tk()
+        report_enabled = tk.BooleanVar(master=root, value=False)
+
         root.title("VBA Extractor")
-        root.geometry("520x220")
+        root.geometry("520x250")
         root.resizable(False, False)
 
         title = tk.Label(root, text="Excelファイルをここにドラッグ&ドロップ")
@@ -165,12 +235,19 @@ def main():
             relief="groove",
             bd=2,
             width=52,
-            height=5
+            height=5,
         )
         drop_area.pack(padx=16, pady=8, fill="x")
 
         hint = tk.Label(root, text="対応形式: .xlsm / .xlsb / .xls")
         hint.pack(pady=(4, 8))
+
+        report_checkbox = tk.Checkbutton(
+            root,
+            text="実行レポートを出力する（同じフォルダにJSON）",
+            variable=report_enabled,
+        )
+        report_checkbox.pack(pady=(0, 8))
 
         browse_btn = tk.Button(root, text="ファイル選択...", command=browse_file)
         browse_btn.pack(pady=(0, 12))
@@ -194,10 +271,29 @@ def main():
         root.mainloop()
         return
 
-    # フォールバック: 従来のファイル選択ダイアログ
+    # フォールバック: D&D未対応の起動画面
     root = tk.Tk()
-    root.withdraw()
-    browse_file()
+    report_enabled = tk.BooleanVar(master=root, value=False)
+
+    root.title("VBA Extractor")
+    root.geometry("420x140")
+    root.resizable(False, False)
+
+    title = tk.Label(root, text="抽出対象ファイルを選択してください")
+    title.pack(pady=(12, 8))
+
+    report_checkbox = tk.Checkbutton(
+        root,
+        text="実行レポートを出力する（同じフォルダにJSON）",
+        variable=report_enabled,
+    )
+    report_checkbox.pack(pady=(0, 8))
+
+    browse_btn = tk.Button(root, text="ファイル選択...", command=browse_file)
+    browse_btn.pack(pady=(0, 12))
+
+    root.mainloop()
+
 
 if __name__ == "__main__":
     main()
